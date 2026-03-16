@@ -1,0 +1,34 @@
+{
+  "feature_names": [
+    "temp_eau",
+    "temp_air",
+    "humidite",
+    "ph",
+    "luminosite",
+    "ir",
+    "temp_delta",
+    "heat_index",
+    "ph_deviation",
+    "clarity_score",
+    "uv_index_est"
+  ],
+  "feature_importances": {
+    "temp_eau": 0.2669,
+    "temp_air": 0.0,
+    "humidite": 0.0005,
+    "ph": 0.0827,
+    "luminosite": 0.0006,
+    "ir": 0.19,
+    "temp_delta": 0.0001,
+    "heat_index": 0.0,
+    "ph_deviation": 0.2821,
+    "clarity_score": 0.1767,
+    "uv_index_est": 0.0004
+  },
+  "status_classes": [
+    "Danger",
+    "Normal",
+    "Warning"
+  ],
+  "version": "2.0"
+}
