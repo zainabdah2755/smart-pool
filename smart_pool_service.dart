@@ -17,7 +17,7 @@ import 'package:http/http.dart' as http;
 
 class ApiConfig {
   // Change this to your server IP when deploying on a real device
-  static const String baseUrl = 'http://192.168.1.100:8000';
+  static const String baseUrl = 'https://smart-pool-production.up.railway.app';
   static const Duration timeout = Duration(seconds: 15);
 }
 

@@ -26,8 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 
 from chlorine_optimizer import calculate_chlorine_dose
-from weather_service import fetch_weather_sync
-
+from weather_service import fetch_weather
 # ─────────────────────────────────────────────
 # LOAD MODELS
 # ─────────────────────────────────────────────
@@ -307,17 +306,16 @@ def rule_based_predict(data: SensorData):
 # ─────────────────────────────────────────────
 
 @app.post("/predict", response_model=PredictionResponse)
-def predict(data: SensorData):
+async def predict(data: SensorData):
     """
     Full AI-powered pool analysis.
-    Includes ML predictions, chlorine dosing, algae risk,
-    maintenance alerts, recommendations and optional weather data.
     """
-    # ── Safety hard-limits before ML ─────────────────────────────
+
+    # ── Safety ─────────────────────────────
     if data.ph < 6.0 or data.ph > 9.5:
         raise HTTPException(422, detail=f"pH value {data.ph} is outside sensor range")
 
-    # ── ML Predictions ────────────────────────────────────────────
+    # ── ML Predictions ─────────────────────
     if MODELS_LOADED:
         feats = np.array([engineer(data)])
         status_enc   = model_status.predict(feats)[0]
@@ -328,19 +326,24 @@ def predict(data: SensorData):
     else:
         status, health_score, algae_risk, needs_maint = rule_based_predict(data)
 
-    # ── Algae label ───────────────────────────────────────────────
-    if algae_risk >= 75:  algae_label = "Critical"
-    elif algae_risk >= 50: algae_label = "High"
-    elif algae_risk >= 25: algae_label = "Moderate"
-    else:                  algae_label = "Low"
+    # ── Algae label ────────────────────────
+    if algae_risk >= 75:
+        algae_label = "Critical"
+    elif algae_risk >= 50:
+        algae_label = "High"
+    elif algae_risk >= 25:
+        algae_label = "Moderate"
+    else:
+        algae_label = "Low"
 
-    # ── Weather fetch ─────────────────────────────────────────────
+    # ── Weather fetch (FIXED) ─────────────
     weather_info: Optional[WeatherInfo] = None
     weather_algae_factor = 0.0
 
     if data.latitude is not None and data.longitude is not None:
-        wd = fetch_weather_sync(data.latitude, data.longitude)
-        if wd.error:
+        wd = await fetch_weather(data.latitude, data.longitude)
+
+        if wd and wd.error:
             weather_info = WeatherInfo(
                 temperature=None, humidity=None, uv_index=None,
                 description=None, chlorine_extra_ppm=None,
@@ -348,26 +351,27 @@ def predict(data: SensorData):
                 cover_recommendation=None, maintenance_advisory=None,
                 forecast_summary=None, error=wd.error,
             )
-        else:
+        elif wd:
             c = wd.current
             imp = wd.impact
+
             weather_info = WeatherInfo(
-                temperature=c.temperature_2m,
-                humidity=c.relative_humidity_2m,
-                uv_index=c.uv_index,
-                description=c.weather_description,
-                chlorine_extra_ppm=imp.chlorine_extra_ppm,
-                evaporation_level=imp.evaporation_level,
-                contamination_risk=imp.contamination_risk,
-                cover_recommendation=imp.cover_recommendation,
-                maintenance_advisory=imp.maintenance_advisory,
-                forecast_summary=imp.forecast_summary,
+                temperature=c.temperature_2m if c else None,
+                humidity=c.relative_humidity_2m if c else None,
+                uv_index=c.uv_index if c else None,
+                description=c.weather_description if c else None,
+                chlorine_extra_ppm=imp.chlorine_extra_ppm if imp else None,
+                evaporation_level=imp.evaporation_level if imp else None,
+                contamination_risk=imp.contamination_risk if imp else None,
+                cover_recommendation=imp.cover_recommendation if imp else None,
+                maintenance_advisory=imp.maintenance_advisory if imp else None,
+                forecast_summary=imp.forecast_summary if imp else None,
                 error=None,
             )
-            weather_algae_factor = imp.algae_weather_factor
-            # Boost algae risk with weather factor
-            algae_risk = float(min(100, algae_risk + weather_algae_factor * 20))
 
+            if imp:
+                weather_algae_factor = imp.algae_weather_factor
+                algae_risk = float(min(100, algae_risk + weather_algae_factor * 20))
     # ── Chlorine dose ─────────────────────────────────────────────
     extra_cl = 0.0
     if weather_info and weather_info.chlorine_extra_ppm:
@@ -427,12 +431,10 @@ def predict(data: SensorData):
 # ─────────────────────────────────────────────
 
 @app.post("/predict/quick")
-def predict_quick(data: SensorData):
-    """Lightweight prediction without weather fetch — lower latency."""
-    # Temporarily null out coords
+async def predict_quick(data: SensorData):
     data.latitude = None
     data.longitude = None
-    return predict(data)
+    return await predict(data)
 
 
 # ─────────────────────────────────────────────
